@@ -58,8 +58,6 @@ print()
 print('^ Creating  dataset: DS2, size: ' + str(len(DS2)))
 STORAGE.add_dataset('DS2', DS2, len(DS2))
 
-start = time.time()
-
 # First map-operation
 def length(argument):
     return len(argument)
