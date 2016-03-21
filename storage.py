@@ -24,7 +24,7 @@ class Storage(object):
         # Meta data about datasets
         self.dataset_table = {} # Skal gemmes på en måde
 
-        # Head position
+        # Read/write head position
         self.position = 0
 
         # Manager for concurrency
@@ -100,7 +100,7 @@ class Storage(object):
 
     def get_size(self, dataset_id):
         '''
-        Get the size of a dataset in blocks
+        Get the amount of blocks in a dataset
         '''
         return self.dataset_table[dataset_id].size
 
@@ -150,15 +150,26 @@ class Storage(object):
         return dataset.datablocks
 
     def reader(self):
+        '''
+        A reading process, which serves data blocks requests from read_data
+        '''
         while True:
-
+            # Sort the list of jobs by their address
             jobs = sorted(self.job_queue, key=lambda x: x[0])
 
             try:
+                # Find the job with the closest highest address
                 (address, data_id) = next(x for x in jobs if x[0] >= self.position)
-                self.job_queue.remove((address, data_id))
+
+                # Read the data from disc
                 data = self._read_block(address)
+
+                # Serve data to the requesting process
                 self.data_queues[data_id].put(data)
+
+                # Remove the job from the list
+                self.job_queue.remove((address, data_id))
             except:
-                time.sleep(0.01)
+                # No jobs found. Start from position 0.
                 self.position = 0
+                time.sleep(0.01)
