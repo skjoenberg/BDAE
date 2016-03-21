@@ -86,13 +86,11 @@ def digits(arguments):
     print('* The dataset only contains digits')
 
 def hue(scheduler, mapper1, reducer1, mapper2, reducer2):
-    for i in range(1000):
-#        time.sleep(0.01)
+    for i in range(100):
         scheduler.add_operation('DS1', Priority.normal, mapper1, reducer1)
-        SCHEDULER.add_operation('DS2', Priority.high, mapper1, reducer1)
-        SCHEDULER.add_operation('DS1', Priority.normal, mapper2, reducer2)
-        SCHEDULER.add_operation('DS2', Priority.low, mapper2, reducer2)
-        end = time.time()
+        scheduler.add_operation('DS1', Priority.normal, mapper2, reducer2)
+        scheduler.add_operation('DS2', Priority.high, mapper1, reducer1)
+        scheduler.add_operation('DS2', Priority.low, mapper2, reducer2)
 
 length_code = length.__code__
 sum_code = sum.__code__
@@ -103,11 +101,8 @@ rec1 = pickle.dumps(sum_code)
 map2 = pickle.dumps(digit_code)
 rec2 = pickle.dumps(digits_code)
 
-#SCHEDULER.add_operation('DS1', Priority.high, lol, lal)
-#lolle = Process(SCHEDULER.add_operation('DS1', Priority.high, lol, lal))
-
 lolle = Process(target=hue, args=(SCHEDULER, map1, rec1, map2, rec2))
 lolle.start()
-time.sleep(1)
+time.sleep(2)
 print_section('Scheduling operations')
 SCHEDULER.schedule()

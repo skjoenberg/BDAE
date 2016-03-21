@@ -26,8 +26,9 @@ class Scheduler(object):
 
         # Operations
         self.operation_table = self.manager.dict()
-        self.crit = Semaphore()
-#
+#        self.operation_table = {}
+
+
     def add_operation(self, dataset_id, prio, map_operation, reduce_operation=None, return_address=None, write=False, read=True):
         '''
         Add operation to a dataset
@@ -37,10 +38,11 @@ class Scheduler(object):
 
         # Add the operation to queue
         if dataset_id in self.operation_table:
-            self.operation_table[dataset_id].append(operation)
+            temp = self.operation_table[dataset_id]
+            temp.append(operation)
+            self.operation_table[dataset_id] = temp
         else:
             self.operation_table[dataset_id] = [operation]
-        self.crit.release()
 
         # Add data block to scheduler
         if prio == Priority.high:
@@ -57,8 +59,7 @@ class Scheduler(object):
         # Create data queue and a storage reading process
 
         print(self.normal_access)
-        mm = Manager()
-        data_queue = mm.Queue()
+        data_queue = self.manager.Queue()
         self.storage.read_data(dataset_id, data_queue)
 
         # Create a list of lists for each operation
@@ -91,7 +92,6 @@ class Scheduler(object):
 
                 op_index = 0
                 for operation in self.operation_table[dataset_id]:
-#                    print(operation.map(data_block))
                     results[op_index].append(operation.map(data_block))
                     op_index += 1
 
@@ -107,7 +107,7 @@ class Scheduler(object):
 
         # Remove the operation meta data for the dataset
         if operations > 0:
-            print('SLET')
+            print('!!!!!! SLET')
             del self.operation_table[dataset_id]
 
     def schedule(self):
