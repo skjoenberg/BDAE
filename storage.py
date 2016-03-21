@@ -11,15 +11,18 @@ from operation import Operation
 from dataset import Dataset
 import random
 import string
-
+import math
 
 class Storage(object):
     '''
     Storage system
     '''
     def __init__(self):
-        # The given page size for data blocks
+        # The given page size
         self._PAGE_SIZE = 4096
+
+        # The given size for data blocks
+        self._BLOCK_SIZE = 1 * self._PAGE_SIZE
 
         # Meta data about datasets
         self.dataset_table = {} # Skal gemmes på en måde
@@ -39,12 +42,17 @@ class Storage(object):
         # Path to storage file
         _path = 'data.data'
 
+        # Size of storage (Default 200 mb)
+        self._SIZE   = 4096 * 256 * 200
+
+        # Amount of blocks
+        self._BLOCKS = math.floor(self._SIZE / self._BLOCK_SIZE)
+
         # Check whether a storage file exists, else create one
         if not os.path.exists(_path):
             print('Writing storage file')
             f = open(_path, 'w+b')
-            # Default size is 200 MB
-            f.write(b'?' * 1024 * 1024 * 200)
+            f.write(b'?' * self._SIZE)
             f.close
 
         # Open storage and create a MMAP
@@ -52,8 +60,11 @@ class Storage(object):
             storage = open(_path, 'a+b')
         except:
             print('Cannot open storage file!')
-            pass
+
         self.datamap = mmap.mmap(storage.fileno(), 0)
+
+        # Free space vector
+        self.free_space =[(0, self._BLOCKS)]
 
         # Index to where the lastest data block have been written
         self._index = 0
@@ -98,6 +109,27 @@ class Storage(object):
 
         return data
 
+    def _worst_fit(self, n_blocks):
+        largest_segment = sorted(self.free_space, key=lambda x: x[1])[0]
+        blocks_amount = largest_segment[1]
+
+        assert blocks_amount >= n_blocks
+
+        free_blocks = []
+        current_block = largest_segment[0]
+        for _ in range(n_blocks):
+            free_blocks.append(current_block)
+            current_block += self._BLOCK_SIZE
+
+        self.free_space.remove(largest_segment)
+        self.free_space.append((current_block, blocks_amount - n_blocks))
+
+        return free_blocks
+
+
+    def _request_blocks(self, n_blocks):
+        return self._worst_fit(n_blocks)
+
     def get_size(self, dataset_id):
         '''
         Get the amount of blocks in a dataset
@@ -116,28 +148,35 @@ class Storage(object):
             self.dataset_table[dataset_id].size+=1
             return address
 
-    def add_dataset(self, dataset_id, dataset, size):
+    def add_dataset(self, dataset_id, dataset, size=None):
         '''
         Add a new dataset to the storage
         '''
         # Add metadata about the dataset
-        self.dataset_table[dataset_id] = Dataset(size)
+        if size:
+            current_size = size
+        else:
+            current_size = len(dataset)
 
-        # Generate naive start-address
-        address = self._index * self._PAGE_SIZE
+        self.dataset_table[dataset_id] = Dataset(current_size)
+
+        requested_blocks = self._request_blocks(current_size)
+
+        assert len(requested_blocks) >= len(dataset)
 
         # Write the data blocks to a file
+        block_index = 0
         for data_block in dataset:
-            self.append_data(dataset_id, data_block, address)
-            self.dataset_table[dataset_id].append_block_index(address)
-            address += self._PAGE_SIZE
+            self.append_data(dataset_id, data_block, requested_blocks[block_index])
+            self.dataset_table[dataset_id].append_block_index(requested_blocks[block_index])
+            block_index += 1
 
-        self._index += size
 
     def read_data(self, dataset_id, data_queue):
         '''
         Run the execution-queue for a given dataset
         '''
+        # Generate a random id (6 characters)
         data_id = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(6))
 
         dataset = self.dataset_table[dataset_id]
