@@ -104,5 +104,6 @@ rec2 = pickle.dumps(digits_code)
 lolle = Process(target=hue, args=(SCHEDULER, map1, rec1, map2, rec2))
 lolle.start()
 time.sleep(2)
+
 print_section('Scheduling operations')
 SCHEDULER.schedule()
