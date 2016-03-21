@@ -39,13 +39,14 @@ class Operation(object):
         '''
         try:
 #            self.map_results[index] = self.map_operation(data_block)
+
+            # Create wrapper function
             def map_wrapper(): pass
 
+            # Put code into the wrapper function
             map_wrapper.__code__ = pickle.loads(self.map_operation)
-            map_operation = map_wrapper
-
+            # Use the wrapper as map-function
             return map_wrapper(data_block)
-#            return self.map_operation(data_block)
         except:
             raise MapFunctionError
 
@@ -53,13 +54,15 @@ class Operation(object):
         '''
         Reduce the resulsts of the map-function
         '''
+        # Create wrapper function
         def reduce_wrapper(): pass
 
+        # Put code into the wrapper function
         reduce_wrapper.__code__ = pickle.loads(self.reduce_operation)
-        reduce_operation = reduce_wrapper
 
         try:
-            reduced_result = reduce_operation(results)
+            # Use the wrapper as reduce-function
+            reduced_result = reduce_wrapper(results)
         except:
             raise ReduceFunctionError
 
