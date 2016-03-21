@@ -1,11 +1,20 @@
-from time import sleep
+import time
+import dis
+from multiprocess import Manager, Process, Pool
+import dill as pickle
 from priorities import Priority
 from storage import Storage
 from scheduler import Scheduler
-import multiprocessing as mp
-import pickle
+from functools import wraps
 
-mp.set_start_method('fork')
+
+def print_section(section):
+    print('')
+    print('&' * (len(section) + 4))
+    print('& ' + section + ' &')
+    print('&' * (len(section) + 4))
+    print('')
+
 # Initiate storage with 3 worker threads
 STORAGE = Storage()
 
@@ -20,6 +29,18 @@ DS1_B4 = '4444' * 1024
 DS1 = [DS1_B1, DS1_B2, DS1_B3, DS1_B4,
        DS1_B1, DS1_B2, DS1_B3, DS1_B4,
        DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
+       DS1_B1, DS1_B2, DS1_B3, DS1_B4,
        DS1_B1, DS1_B2, DS1_B3, DS1_B4]
 
 DS2_B1 = 'aaaa' * 1024
@@ -29,49 +50,64 @@ DS2_B4 = 'dddd' * 1024
 DS2 = [DS2_B1, DS2_B2, DS2_B3, DS2_B4]
 
 # Add the data set to the storage
-print('')
-print('&&&&&&&&&&&&&&&&&&&&&')
-print('& Creating datasets &')
-print('&&&&&&&&&&&&&&&&&&&&&')
-print('')
-STORAGE.add_dataset('DS1', DS1, len(DS1))
-STORAGE.add_dataset('DS2', DS2, len(DS2))
-STORAGE.add_dataset('DS3', DS2, len(DS2))
+print_section('Creating datasets')
 
+print('^ Creating dataset: DS1, size: ' + str(len(DS1)))
+STORAGE.add_dataset('DS1', DS1, len(DS1))
+print()
+print('^ Creating  dataset: DS2, size: ' + str(len(DS2)))
+STORAGE.add_dataset('DS2', DS2, len(DS2))
+
+start = time.time()
+
+# First map-operation
 def length(argument):
     return len(argument)
 
-def digit(argument):
-    return argument.isdigit()
-
+# First reduce-operation
 def sum(arguments):
     res = 0
     for argument in arguments:
         res += argument
-    print('* The length of the dataset is ' + str(res) + ' bytes')
+    print()
+    print('* The size of the dataset is ' + str(res) + ' bytes')
 
+# Second map-operation
+def digit(argument):
+    return argument.isdigit()
 
+# Second reduce-operation
 def digits(arguments):
     for argument in arguments:
         if not argument:
-            print('* The dataset is not only digits')
+            print('* The dataset does not only contain digits')
             return
-    print('* The dataset is only digits')
+    print()
+    print('* The dataset only contains digits')
 
+def hue(scheduler, mapper1, reducer1, mapper2, reducer2):
+    for i in range(1000):
+#        time.sleep(0.01)
+        scheduler.add_operation('DS1', Priority.normal, mapper1, reducer1)
+        SCHEDULER.add_operation('DS2', Priority.high, mapper1, reducer1)
+        SCHEDULER.add_operation('DS1', Priority.normal, mapper2, reducer2)
+        SCHEDULER.add_operation('DS2', Priority.low, mapper2, reducer2)
+        end = time.time()
 
-print('')
-print('&&&&&&&&&&&&&&&&&&&&&')
-print('& Adding operations &')
-print('&&&&&&&&&&&&&&&&&&&&&')
-print('')
-SCHEDULER.add_operation('DS1', Priority.normal, length, sum)
-SCHEDULER.add_operation('DS2', Priority.high, length, sum)
-SCHEDULER.add_operation('DS1', Priority.normal, digit, digits)
-SCHEDULER.add_operation('DS2', Priority.low, digit, digits)
+length_code = length.__code__
+sum_code = sum.__code__
+digit_code = digit.__code__
+digits_code = digits.__code__
+map1 = pickle.dumps(length_code)
+rec1 = pickle.dumps(sum_code)
+map2 = pickle.dumps(digit_code)
+rec2 = pickle.dumps(digits_code)
 
-print('')
-print('&&&&&&&&&&&&&&&&&&&&&&&&&')
-print('& Scheduling operations &')
-print('&&&&&&&&&&&&&&&&&&&&&&&&&')
-print('')
+#SCHEDULER.add_operation('DS1', Priority.high, lol, lal)
+#lolle = Process(SCHEDULER.add_operation('DS1', Priority.high, lol, lal))
+
+lolle = Process(target=hue, args=(SCHEDULER, map1, rec1, map2, rec2))
+lolle.start()
+time.sleep(1)
+print_section('Scheduling operations')
 SCHEDULER.schedule()

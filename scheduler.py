@@ -1,9 +1,11 @@
 from multiprocessing import Manager
 from operation import Operation
 from priorities import Priority
-from multiprocessing import Pool, Process, Queue
-import pickle
+from multiprocess import Semaphore, Pool, Process, Queue
+import dill as pickle
 import time
+import random
+import string
 
 
 class Scheduler(object):
@@ -23,29 +25,27 @@ class Scheduler(object):
         self._pool = Pool(processes=threads)
 
         # Operations
-        self.operation_map = {}
-
-    def _map_operation(self, dataset_id, operation):
-        if dataset_id in self.operation_map:
-            self.operation_map[dataset_id].append(operation)
-        else:
-            self.operation_map[dataset_id] = [operation]
-
+        self.operation_table = self.manager.dict()
+        self.crit = Semaphore()
+#
     def add_operation(self, dataset_id, prio, map_operation, reduce_operation=None, return_address=None, write=False, read=True):
         '''
         Add operation to a dataset
         '''
+
         operation = Operation(map_operation, reduce_operation, return_address, write, read)
 
         # Add the operation to queue
-        self._map_operation(dataset_id, operation)
+        if dataset_id in self.operation_table:
+            self.operation_table[dataset_id].append(operation)
+        else:
+            self.operation_table[dataset_id] = [operation]
+        self.crit.release()
 
         # Add data block to scheduler
-        #!!! Remember to check, whether the block is in the normal queue, when adding it to the high queue
         if prio == Priority.high:
             if dataset_id not in self.high_access:
                 self.high_access.append(dataset_id)
-
                 if dataset_id in self.normal_access:
                     self.normal_access.remove(dataset_id)
 
@@ -53,37 +53,78 @@ class Scheduler(object):
             if dataset_id not in self.normal_access and dataset_id not in self.high_access:
                 self.normal_access.append(dataset_id)
 
+    def _run_queue(self, dataset_id):
+        # Create data queue and a storage reading process
 
-    def run_queue(self, dataset_id):
-        data = Queue()
+        print(self.normal_access)
+        mm = Manager()
+        data_queue = mm.Queue()
+        self.storage.read_data(dataset_id, data_queue)
 
-        hej = Process(target=self.storage.read_data, args=(dataset_id, data))
+        # Create a list of lists for each operation
+        results = []
+        while True:
+            try:
+                for operation in self.operation_table[dataset_id]:
+                    results.append([])
+                break
+            except:
+                time.sleep(0.1)
 
-        hej.start()
-        for i in range(self.storage.get_size(dataset_id)):
-            data_block = data.get()
-            print('- Performing operations on block: ' + str(i) + ', dataset: ' + dataset_id)
-            for operation in self.operation_map[dataset_id]:
-#                print(operation)
-                operation.map(i, data_block)
-#                self._pool.apply(operation.map, (i, data_block, ))
+        # Amount of data-blocks
+        data_blocks = self.storage.get_size(dataset_id)
 
-        for operation in self.operation_map[dataset_id]:
-            operation.reduce()
+        # Amount of operations
+        operations = len(self.operation_table[dataset_id])
 
-        del self.operation_map[dataset_id]
+        # Execute map-operation on the data queue
+        for i in range(data_blocks):
+            # Fetch data block from data queue
+            try:
+                data_block = data_queue.get(timeout=3)
+
+                print('- Performing operations on block: ' + str(i) + ', dataset: ' + dataset_id)
+                # Perform the operations on fetched data block
+
+#                def reduce_wrapper(): pass
+#                reduce_wrapper.__code__ = pickle.loads(reduce_operation)
+
+                op_index = 0
+                for operation in self.operation_table[dataset_id]:
+#                    print(operation.map(data_block))
+                    results[op_index].append(operation.map(data_block))
+                    op_index += 1
+
+            except:
+                print('! Timeouted waiting for data')
+
+        # Execute the reduce-operation
+        op_index = 0
+        for operation in self.operation_table[dataset_id]:
+            operation.reduce(results[op_index])
+            op_index += 1
+        self.operation_table[dataset_id] = []
+
+        # Remove the operation meta data for the dataset
+        if operations > 0:
+            print('SLET')
+            del self.operation_table[dataset_id]
 
     def schedule(self):
         '''
         Schedule the queued operations
         '''
+        reading_process = Process(target=self.storage.reader)
+        reading_process.start()
 
         while True:
-            print('/ High priority queue is ' + str(self.high_access))
-            print('/ Normal priority queue is ' + str(self.normal_access))
+#            print()
+#            print('/ High priority queue is ' + str(self.high_access))
+#            print('/ Normal priority queue is ' + str(self.normal_access))
+#            print()
             if self.high_access:
-                self.run_queue(self.high_access.pop(0))
+                self._pool.apply_async(self._run_queue(self.high_access.pop(0)))
             elif self.normal_access:
-                self.run_queue(self.normal_access.pop(0))
+                self._pool.apply_async(self._run_queue(self.normal_access.pop(0)))
             else:
-                break
+                time.sleep(0.5)

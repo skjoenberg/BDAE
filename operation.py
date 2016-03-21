@@ -1,4 +1,12 @@
-class NoReduceOperation(Exception):
+import dill as pickle
+
+class MapFunctionError(Exception):
+    '''
+    No reduce operation
+    '''
+    pass
+
+class ReduceFunctionError(Exception):
     '''
     No reduce operation
     '''
@@ -24,17 +32,35 @@ class Operation(object):
         # Operation resulsts
         self.map_results = {}
 
-    def map(self, index, data_block):
-        self.map_results[index] = self.map_operation(data_block)
-
-
-    def reduce(self):
+#        @staticmethod
+    def map(self, data_block):
         '''
-        Execute the operation on the given data
+        Execute the map-function on the given data block
         '''
-        results = []
+        try:
+#            self.map_results[index] = self.map_operation(data_block)
+            def map_wrapper(): pass
 
-        for i in self.map_results:
-            results.append(self.map_results[i])
+            map_wrapper.__code__ = pickle.loads(self.map_operation)
+            map_operation = map_wrapper
 
-        return self.reduce_operation(results)
+            return map_wrapper(data_block)
+#            return self.map_operation(data_block)
+        except:
+            raise MapFunctionError
+
+    def reduce(self, results):
+        '''
+        Reduce the resulsts of the map-function
+        '''
+        def reduce_wrapper(): pass
+
+        reduce_wrapper.__code__ = pickle.loads(self.reduce_operation)
+        reduce_operation = reduce_wrapper
+
+        try:
+            reduced_result = reduce_operation(results)
+        except:
+            raise ReduceFunctionError
+
+        return reduced_result
