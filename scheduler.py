@@ -1,3 +1,6 @@
+'''
+Module for scheduling operations, given a storage object.
+'''
 from multiprocessing import Manager
 from operation import Operation
 from priorities import Priority
@@ -57,8 +60,10 @@ class Scheduler(object):
                 self.normal_access.append(dataset_id)
 
     def _run_queue(self, dataset_id, debug=False):
+        '''
+        Run the queue of operations for a given dataset
+        '''
         # Create data queue and a storage reading process
-
         if debug:
             print('~ Request data blocks from reading process')
 
