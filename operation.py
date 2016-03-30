@@ -32,7 +32,6 @@ class Operation(object):
         # Operation resulsts
         self.map_results = {}
 
-#        @staticmethod
     def map(self, data_block):
         '''
         Execute the map-function on the given data block
