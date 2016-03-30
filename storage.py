@@ -25,10 +25,10 @@ class Storage(object):
         self._BLOCK_SIZE = 1 * self._PAGE_SIZE
 
         # Meta data about datasets
-        self.dataset_table = {} # Skal gemmes på en måde
+        self._dataset_table = {}
 
         # Read/write head position
-        self.position = 0
+        self._position = 0
 
         # Manager for concurrency
         self.manager = Manager()
@@ -43,7 +43,7 @@ class Storage(object):
         _path = 'data.data'
 
         # Size of storage (Default 200 mb)
-        self._SIZE   = 4096 * 256 * 200
+        self._SIZE = 4096 * 256 * 200
 
         # Amount of blocks
         self._BLOCKS = math.floor(self._SIZE / self._BLOCK_SIZE)
@@ -61,15 +61,14 @@ class Storage(object):
         except:
             print('Cannot open storage file!')
 
+        # Create MMAP to file
         self.datamap = mmap.mmap(storage.fileno(), 0)
 
         # Free space vector
         self.free_space =[(0, self._BLOCKS)]
 
-        # Index to where the lastest data block have been written
-        self._index = 0
 
-    def _write_data(self, address, data_block):
+    def _write_data(self, address, data_block, flush=True):
         '''
         Writes a data block to the page at the given address
         '''
@@ -77,7 +76,7 @@ class Storage(object):
         try:
             # Go to the current address
             self.datamap.seek(address)
-            self.position = address
+            self._position = address
 
             # Write the block
             self.datamap.write(bytes(data_block, 'utf-8'))
@@ -85,11 +84,13 @@ class Storage(object):
             print('! Could not write data block to ' + str(address) + '. Not enough space.')
 
         # Flush the written data to the file
-        try:
-            self.datamap.flush()
-        except:
-            print("Cannot flush data with mmap!")
-            pass
+        if flush:
+            try:
+                self.datamap.flush()
+            except:
+                print("Cannot flush data with mmap!")
+                pass
+
 
     def _read_block(self, address):
         '''
@@ -100,7 +101,7 @@ class Storage(object):
         try:
             # Go to the current address
             self.datamap.seek(address)
-            self.position = address
+            self._position = address
 
             # Read the data
             data = self.datamap.read(self._PAGE_SIZE)
@@ -109,18 +110,27 @@ class Storage(object):
 
         return data
 
+
     def _worst_fit(self, n_blocks):
+        '''
+        Data block allocation using worst-fit
+        '''
+        # Get the largest free segment
+        #! Faster to use max-heaps
         largest_segment = sorted(self.free_space, key=lambda x: x[1])[0]
         blocks_amount = largest_segment[1]
 
         assert blocks_amount >= n_blocks
 
+        # Construct a list of free datablocks
         free_blocks = []
         current_block = largest_segment[0]
         for _ in range(n_blocks):
             free_blocks.append(current_block)
             current_block += self._BLOCK_SIZE
 
+        # Remove the free space and add the remaining
+        # free space after allocation
         self.free_space.remove(largest_segment)
         self.free_space.append((current_block, blocks_amount - n_blocks))
 
@@ -130,23 +140,26 @@ class Storage(object):
     def _request_blocks(self, n_blocks):
         return self._worst_fit(n_blocks)
 
+
     def get_size(self, dataset_id):
         '''
         Get the amount of blocks in a dataset
         '''
-        return self.dataset_table[dataset_id].size
+        return self._dataset_table[dataset_id].size
 
-    def append_data(self, dataset_id, data_block, address):
+
+    def append_data(self, dataset_id, data_block, address, flush=True):
         '''
         Append data to an existing dataset
         '''
         # Check if there is any more allocated space
         # for the dataset
-        if self.dataset_table[dataset_id].space_left():
+        if self._dataset_table[dataset_id].space_left():
             # Write data block and increament size
-            self._write_data(address, data_block)
-            self.dataset_table[dataset_id].size+=1
+            self._write_data(address, data_block, flush)
+            self._dataset_table[dataset_id].size+=1
             return address
+
 
     def add_dataset(self, dataset_id, dataset, size=None):
         '''
@@ -158,7 +171,7 @@ class Storage(object):
         else:
             current_size = len(dataset)
 
-        self.dataset_table[dataset_id] = Dataset(current_size)
+        self._dataset_table[dataset_id] = Dataset(current_size)
 
         requested_blocks = self._request_blocks(current_size)
 
@@ -167,10 +180,15 @@ class Storage(object):
         # Write the data blocks to a file
         block_index = 0
         for data_block in dataset:
-            self.append_data(dataset_id, data_block, requested_blocks[block_index])
-            self.dataset_table[dataset_id].append_block_index(requested_blocks[block_index])
+            self.append_data(dataset_id, data_block, requested_blocks[block_index], flush=False)
+            self._dataset_table[dataset_id].append_block_index(requested_blocks[block_index])
             block_index += 1
 
+        try:
+            self.datamap.flush()
+        except:
+            print("Cannot flush data with mmap!")
+            pass
 
     def read_data(self, dataset_id, data_queue):
         '''
@@ -179,7 +197,7 @@ class Storage(object):
         # Generate a random id (6 characters)
         data_id = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(6))
 
-        dataset = self.dataset_table[dataset_id]
+        dataset = self._dataset_table[dataset_id]
 
         self.data_queues[data_id] = data_queue
 
@@ -187,6 +205,7 @@ class Storage(object):
             self.job_queue.append((address, data_id))
 
         return dataset.datablocks
+
 
     def reader(self):
         '''
@@ -198,7 +217,7 @@ class Storage(object):
 
             try:
                 # Find the job with the closest highest address
-                (address, data_id) = next(x for x in jobs if x[0] >= self.position)
+                (address, data_id) = next(x for x in jobs if x[0] >= self._position)
 
                 # Read the data from disc
                 data = self._read_block(address)
@@ -210,5 +229,5 @@ class Storage(object):
                 self.job_queue.remove((address, data_id))
             except:
                 # No jobs found. Start from position 0.
-                self.position = 0
+                self._position = 0
                 time.sleep(0.01)
